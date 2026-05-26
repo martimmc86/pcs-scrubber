@@ -1,0 +1,28 @@
+name: Build Windows EXE
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Build EXE
+        run: pyinstaller --onefile --windowed --name "Merlon Scrubber" --icon icon.ico --hidden-import tkinterdnd2 --hidden-import PIL --collect-all tkinterdnd2 --add-data "icon.png;." --add-data "icon.ico;." merlon_scrubber.py
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: Merlon-Scrubber-Windows
+          path: dist/Merlon Scrubber.exe
