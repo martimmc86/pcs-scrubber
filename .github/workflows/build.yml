@@ -19,7 +19,7 @@ jobs:
         run: pip install -r requirements.txt
 
       - name: Build EXE
-        run: pyinstaller --onefile --windowed --name "Merlon Scrubber" --icon icon.ico --hidden-import tkinterdnd2 --hidden-import PIL --collect-all tkinterdnd2 --add-data "icon.png;." --add-data "icon.ico;." merlon_scrubber.py
+        run: pyinstaller --onefile --windowed --name "Merlon Scrubber" --icon icon.ico --hidden-import tkinterdnd2 --hidden-import PIL --collect-all tkinterdnd2 --add-data "icon.png;." --add-data "icon.ico;." --version-file version_info.txt merlon_scrubber.py
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
