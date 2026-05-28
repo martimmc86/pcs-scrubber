@@ -38,40 +38,63 @@ def process_csv(filepath, out_dir, output_name=None, progress_cb=None):
 
     with open(filepath, newline="", encoding="utf-8-sig") as infile:
         reader = csv.DictReader(infile)
+        fieldnames = reader.fieldnames or []
         results = []
 
-        date_columns = ["contact_create_time", "contact_day", "connect_to_agent_date"]
+        # Detect format: E2E-style has "Contact ID" + "Channel" columns
+        fieldnames_lower = [f.strip().lower() for f in fieldnames]
+        is_e2e = "contact id" in fieldnames_lower
 
         for row in reader:
-            contact_id = row.get("contact_id", "")
-
-            date_str = ""
-            for col in date_columns:
-                if col in row and row[col]:
-                    date_str = row[col].strip()
-                    break
-
-            if contact_id.startswith("IN_CALL-"):
-                channel = "VOICE"
-                clean_id = contact_id[len("IN_CALL-"):]
-            elif contact_id.startswith("OUT_CALL-"):
-                channel = "VOICE"
-                clean_id = contact_id[len("OUT_CALL-"):]
-            elif contact_id.startswith("CHAT-"):
-                channel = "CHAT"
-                clean_id = contact_id[len("CHAT-"):]
+            if is_e2e:
+                # E2E format: bare UUID in "Contact ID", channel in "Channel"
+                clean_id = (row.get("Contact ID") or row.get("contact id") or
+                            next((v for k, v in row.items() if k.strip().lower() == "contact id"), "")).strip()
+                raw_channel = (row.get("Channel") or row.get("channel") or
+                               next((v for k, v in row.items() if k.strip().lower() == "channel"), "")).strip().upper()
+                if raw_channel == "VOICE":
+                    channel = "VOICE"
+                elif raw_channel == "CHAT":
+                    channel = "CHAT"
+                else:
+                    reason = f"Unsupported channel: {raw_channel}"
+                    skip_reasons[reason] = skip_reasons.get(reason, 0) + 1
+                    rows_skipped += 1
+                    continue
+                # Date from "Initiation timestamp"
+                date_str = (row.get("Initiation timestamp") or
+                            next((v for k, v in row.items() if k.strip().lower() == "initiation timestamp"), "")).strip()
             else:
-                prefix = contact_id.split("-")[0] if "-" in contact_id else contact_id
-                reason = f"Unsupported channel: {prefix}"
-                skip_reasons[reason] = skip_reasons.get(reason, 0) + 1
-                rows_skipped += 1
-                continue
+                # RVOC format: prefixed contact_id, date in contact_day/contact_create_time
+                contact_id = row.get("contact_id", "")
+                date_str = ""
+                for col in ("contact_day", "contact_create_time", "connect_to_agent_date"):
+                    if col in row and row[col]:
+                        date_str = row[col].strip()
+                        break
 
+                if contact_id.startswith("IN_CALL-"):
+                    channel = "VOICE"
+                    clean_id = contact_id[len("IN_CALL-"):]
+                elif contact_id.startswith("OUT_CALL-"):
+                    channel = "VOICE"
+                    clean_id = contact_id[len("OUT_CALL-"):]
+                elif contact_id.startswith("CHAT-"):
+                    channel = "CHAT"
+                    clean_id = contact_id[len("CHAT-"):]
+                else:
+                    prefix = contact_id.split("-")[0] if "-" in contact_id else contact_id
+                    reason = f"Unsupported channel: {prefix}"
+                    skip_reasons[reason] = skip_reasons.get(reason, 0) + 1
+                    rows_skipped += 1
+                    continue
+
+            # Parse date, output as M/D/YY
             formatted_date = date_str
             for fmt in ("%Y-%m-%d %H:%M:%S", "%Y-%m-%d", "%m/%d/%y", "%m/%d/%Y"):
                 try:
                     dt = datetime.strptime(date_str, fmt)
-                    formatted_date = f"{dt.month:02d}/{dt.day:02d}/{dt.year}"
+                    formatted_date = f"{dt.month}/{dt.day}/{dt.year % 100:02d}"
                     break
                 except ValueError:
                     continue
@@ -82,7 +105,7 @@ def process_csv(filepath, out_dir, output_name=None, progress_cb=None):
             if progress_cb and rows_written % 100 == 0:
                 progress_cb(rows_written, rows_skipped)
 
-    with open(out_path, "w", newline="", encoding="utf-8") as outfile:
+    with open(out_path, "w", newline="", encoding="utf-8-sig") as outfile:
         writer = csv.writer(outfile)
         writer.writerow(["channel", "connect_to_agent_date", "contact_id"])
         writer.writerows(results)
