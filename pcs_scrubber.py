@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Merlon Scrubber (Windows) — Process raw CSV contact files, strip prefixes,
+PCS Scrubber (Windows) — Process raw CSV contact files, strip prefixes,
 assign channels, and output a clean 3-column CSV.
 """
 
@@ -105,15 +105,28 @@ def process_csv(filepath, out_dir, output_name=None, progress_cb=None):
             if progress_cb and rows_written % 100 == 0:
                 progress_cb(rows_written, rows_skipped)
 
+    # Deduplicate by contact_id (column 3), keeping first occurrence
+    seen_ids = set()
+    unique_results = []
+    dupes_removed = 0
+    for r in results:
+        if r[2] not in seen_ids:
+            seen_ids.add(r[2])
+            unique_results.append(r)
+        else:
+            dupes_removed += 1
+
     with open(out_path, "w", newline="", encoding="utf-8-sig") as outfile:
         writer = csv.writer(outfile)
         writer.writerow(["channel", "connect_to_agent_date", "contact_id"])
-        writer.writerows(results)
+        writer.writerows(unique_results)
+
+    rows_written = len(unique_results)
 
     if progress_cb:
         progress_cb(rows_written, rows_skipped)
 
-    return out_path, rows_written, rows_skipped, skip_reasons
+    return out_path, rows_written, rows_skipped, skip_reasons, dupes_removed
 
 
 # ── GUI ──────────────────────────────────────────────────────────────────────
@@ -123,7 +136,7 @@ def main():
         root = TkinterDnD.Tk()
     else:
         root = tk.Tk()
-    root.title("Merlon Scrubber")
+    root.title("PCS Scrubber")
 
     # Set icon
     try:
@@ -184,7 +197,7 @@ def main():
     except Exception:
         pass
 
-    tk.Label(header_frame, text="Merlon Scrubber", bg=BG, fg=FG,
+    tk.Label(header_frame, text="PCS Scrubber", bg=BG, fg=FG,
              font=(FONT_FAMILY, 18, "bold")).pack()
 
     # Separator
@@ -316,12 +329,14 @@ def main():
                 def on_progress(written, skipped):
                     root.after(0, lambda: log_msg(f"  Processed {written} rows ({skipped} skipped)"))
 
-                out_path, written, skipped, skip_reasons = process_csv(src, out,
+                out_path, written, skipped, skip_reasons, dupes_removed = process_csv(src, out,
                     output_name=fname, progress_cb=on_progress)
                 root.after(0, lambda: log_msg(f"\n✓ Complete!"))
                 root.after(0, lambda: log_msg(f"  Output: {os.path.basename(out_path)}"))
                 root.after(0, lambda: log_msg(f"  Rows written: {written}"))
                 root.after(0, lambda: log_msg(f"  Rows skipped: {skipped}"))
+                if dupes_removed:
+                    root.after(0, lambda: log_msg(f"  Duplicates removed: {dupes_removed}"))
                 if skip_reasons:
                     root.after(0, lambda: log_msg(f"\n  Skip reasons:"))
                     for reason, count in skip_reasons.items():
