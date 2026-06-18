@@ -41,12 +41,29 @@ def process_csv(filepath, out_dir, output_name=None, progress_cb=None):
         fieldnames = reader.fieldnames or []
         results = []
 
-        # Detect format: E2E-style has "Contact ID" + "Channel" columns
+        # Detect format
         fieldnames_lower = [f.strip().lower() for f in fieldnames]
         is_e2e = "contact id" in fieldnames_lower
+        # Pre-scrubbed format: has "channel" + "contact_id" (underscore) with plain UUIDs
+        is_prescrubbed = ("channel" in fieldnames_lower and "contact_id" in fieldnames_lower
+                          and "contact id" not in fieldnames_lower)
 
         for row in reader:
-            if is_e2e:
+            if is_prescrubbed:
+                # Already has channel column and clean UUID contact_id
+                raw_channel = (row.get("channel") or "").strip().upper()
+                if raw_channel == "VOICE":
+                    channel = "VOICE"
+                elif raw_channel == "CHAT":
+                    channel = "CHAT"
+                else:
+                    reason = f"Unsupported channel: {raw_channel}"
+                    skip_reasons[reason] = skip_reasons.get(reason, 0) + 1
+                    rows_skipped += 1
+                    continue
+                clean_id = (row.get("contact_id") or "").strip()
+                date_str = (row.get("connect_to_agent_date") or row.get("contact_day") or "").strip()
+            elif is_e2e:
                 # E2E format: bare UUID in "Contact ID", channel in "Channel"
                 clean_id = (row.get("Contact ID") or row.get("contact id") or
                             next((v for k, v in row.items() if k.strip().lower() == "contact id"), "")).strip()
